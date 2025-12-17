@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>一週食堂大作戰：食品加工篇</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Import Map for React & Lucide -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+    <style>
+        body { font-family: "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif; }
+        /* 自定義捲軸樣式 */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Mobile Tap Highlight Fix */
+        * { -webkit-tap-highlight-color: transparent; }
+        
+        /* Safe Area for Notches */
+        .safe-pt { padding-top: env(safe-area-inset-top); }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+    </style>
+</head>
+<body class="bg-slate-100 h-[100dvh] overflow-hidden flex flex-col">
+    <div id="root" class="h-full flex flex-col"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Heart, Utensils, Clock, Flame, Sun, 
+            FlaskConical, ChefHat, Play, RotateCcw, ShoppingBasket, 
+            Coins, ArrowRight, X, Info, MessageCircle, ChevronRight, ChevronLeft,
+            Users, LayoutGrid, MonitorPlay, LogOut, Frown, Gift
+        } from 'lucide-react';
+
+        // --- 遊戲設定 ---
+        const TOTAL_DAYS = 7; 
+        const DAILY_ALLOWANCE = 150; 
+
+        const INITIAL_ROOMMATES = [
+            { id: 1, name: "阿翔", gender: "M", hunger: 80, health: 100, hearts: 0, avatar: "👦", craving: null },
+            { id: 2, name: "阿豪", gender: "M", hunger: 80, health: 100, hearts: 0, avatar: "👨", craving: null },
+            { id: 3, name: "阿杰", gender: "M", hunger: 80, health: 100, hearts: 0, avatar: "👱", craving: null },
+            { id: 4, name: "小蓉", gender: "F", hunger: 80, health: 100, hearts: 0, avatar: "👩", craving: null },
+            { id: 5, name: "小萁", gender: "F", hunger: 80, health: 100, hearts: 0, avatar: "👧", craving: null },
+            { id: 6, name: "小慧", gender: "F", hunger: 80, health: 100, hearts: 0, avatar: "👩‍🦰", craving: null },
+        ];
+
+        // 食物設定 (edible 屬性控制是否可生吃)
+        // 修正：水餃與泡麵初始 processed 設為 false，這樣才能被烹飪
+        const FOOD_TYPES = {
+            MEAT: { name: "生鮮肉品 Meat", icon: "🥩", perishDays: 2, health: 10, hunger: 35, type: "MEAT", cost: 60, edible: false, processed: false },
+            FISH: { name: "新鮮魚類 Fish", icon: "🐟", perishDays: 2, health: 10, hunger: 30, type: "FISH", cost: 50, edible: false, processed: false },
+            FRUIT: { name: "新鮮水果 Fruit", icon: "🍎", perishDays: 3, health: 15, hunger: 20, type: "FRUIT", cost: 40, edible: true, processed: false }, // 只有水果可生吃
+            DUMPLINGS: { name: "冷凍水餃 Dumplings", icon: "🥟", perishDays: 30, health: 0, hunger: 25, type: "DUMPLINGS", cost: 25, edible: false, processed: false }, // 需烹飪
+            INSTANT_NOODLES: { name: "泡麵 Instant Noodles", icon: "🍜", perishDays: 180, health: -8, hunger: 30, type: "INSTANT_NOODLES", cost: 15, edible: false, processed: false }, // 需烹飪
+        };
+
+        // 加工與烹飪方法 (中文在前)
+        const METHODS = {
+            COOK: { id: "COOK", name: "烹飪 Cook", cost: 5, desc: "加熱煮熟，健康美味！(Boil/Fry)", icon: "🍳" },
+            HEAT: { id: "HEAT", name: "高溫殺菌 Canning", cost: 10, desc: "做成罐頭。保存久，營養流失。", icon: "🥫" },
+            DEHYDRATE: { id: "DEHYDRATE", name: "脫水乾燥 Dehydrate", cost: 10, desc: "去除水分。", icon: "🥓" },
+            ADDITIVE: { id: "ADDITIVE", name: "食品添加物 Additives", cost: 5, desc: "加入添加物。增加身體代謝負擔。(Preservatives)", icon: "🌭" },
+            PICKLE: { id: "PICKLE", name: "醃漬 Pickling", cost: 5, desc: "高糖、鹽來製作。", icon: "🍬" },
+        };
+
+        // 配方表 (中文在前)
+        const RECIPES = {
+            MEAT: {
+                COOK: { name: "香煎牛排 Steak", icon: "🥩", shelfLife: 2, health: 15, hunger: 60 },
+                HEAT: { name: "肉罐頭 Canned Meat", icon: "🥫", shelfLife: 99, health: -5, hunger: 35 },
+                DEHYDRATE: { name: "肉乾 Jerky", icon: "🥓", shelfLife: 30, health: -2, hunger: 25 },
+                ADDITIVE: { name: "香腸 Sausage", icon: "🌭", shelfLife: 20, health: -15, hunger: 45 },
+            },
+            FISH: {
+                COOK: { name: "烤魚 Grilled Fish", icon: "🐟", shelfLife: 2, health: 15, hunger: 55 },
+                HEAT: { name: "魚罐頭 Canned Fish", icon: "🥫", shelfLife: 99, health: -5, hunger: 30 },
+            },
+            FRUIT: {
+                HEAT: { name: "水果罐頭 Canned Fruit", icon: "🥫", shelfLife: 99, health: -5, hunger: 20 },
+                DEHYDRATE: { name: "果乾 Dried Fruit", icon: "🥭", shelfLife: 30, health: -2, hunger: 15 },
+                PICKLE: { name: "蜜餞 Preserved Fruit", icon: "🍬", shelfLife: 60, health: -10, hunger: 10 },
+            },
+            DUMPLINGS: {
+                COOK: { name: "水煮水餃 Boiled Dumplings", icon: "🥟", shelfLife: 1, health: 5, hunger: 45 }, 
+            },
+            INSTANT_NOODLES: {
+                COOK: { name: "煮好的泡麵 Cooked Noodles", icon: "🍜", shelfLife: 1, health: -5, hunger: 45 }, 
+            }
+        };
+
+        // 收集所有可能的食物名稱，用於生成隨機 Craving (排除生食)
+        const EDIBLE_CRAVINGS = [
+            FOOD_TYPES.FRUIT.name,
+            ...Object.values(RECIPES).flatMap(group => Object.values(group).map(r => r.name))
+        ];
+
+        // --- 主程式元件 ---
+        function App() {
+            const [phase, setPhase] = useState('tutorial');
+            const [day, setDay] = useState(1);
+            const [roommates, setRoommates] = useState(INITIAL_ROOMMATES);
+            const [inventory, setInventory] = useState([]);
+            const [selectedFoodId, setSelectedFoodId] = useState(null);
+            const [logs, setLogs] = useState([]);
+            const [score, setScore] = useState(0);
+            const [money, setMoney] = useState(300);
+            const [mobileTab, setMobileTab] = useState('inventory'); 
+
+            useEffect(() => {
+                if (selectedFoodId) {
+                    setMobileTab('kitchen');
+                } else if (mobileTab === 'kitchen') {
+                    setMobileTab('inventory');
+                }
+            }, [selectedFoodId]);
+
+            useEffect(() => {
+                if (phase === 'playing') {
+                    updateCravings();
+                }
+            }, [phase, day]);
+
+            const updateCravings = () => {
+                setRoommates(prev => prev.map(r => ({
+                    ...r,
+                    craving: EDIBLE_CRAVINGS[Math.floor(Math.random() * EDIBLE_CRAVINGS.length)]
+                })));
+            };
+
+            const addLog = (msg, type = "info") => {
+                const id = Date.now() + Math.random(); 
+                setLogs(prev => [...prev, { msg, type, id }]);
+                setTimeout(() => {
+                    setLogs(prev => prev.filter(log => log.id !== id));
+                }, 3000);
+            };
+
+            const startGame = () => {
+                setPhase('playing');
+                setDay(1);
+                setRoommates(JSON.parse(JSON.stringify(INITIAL_ROOMMATES)));
+                setInventory([
+                    createFood(FOOD_TYPES.MEAT),
+                    createFood(FOOD_TYPES.FRUIT),
+                    createFood(FOOD_TYPES.DUMPLINGS)
+                ]);
+                setLogs([]);
+                setScore(0);
+                setMoney(300);
+                setMobileTab('inventory');
+                addLog("遊戲開始！ Game Start!", "system");
+            };
+
+            const createFood = (typeTemplate) => ({
+                id: Math.random().toString(36).substr(2, 9),
+                ...typeTemplate,
+                daysLeft: typeTemplate.perishDays,
+                processed: typeTemplate.processed || false,
+                edible: typeTemplate.edible !== undefined ? typeTemplate.edible : true
+            });
+
+            const buyFood = (typeKey) => {
+                const type = FOOD_TYPES[typeKey];
+                if (money < type.cost) {
+                    addLog("經費不足！ No Money!", "error");
+                    return;
+                }
+                setMoney(prev => prev - type.cost);
+                const newFood = createFood(type);
+                setInventory(prev => [...prev, newFood]);
+                addLog(`購買了 Bought ${type.name}`, "success");
+            };
+
+            const processFood = (food, methodId) => {
+                const method = METHODS[methodId];
+                if (money < method.cost) {
+                    addLog("經費不足！ No Money!", "error");
+                    return;
+                }
+                const recipe = RECIPES[food.type]?.[methodId];
+                if (!recipe) {
+                    addLog("無法使用此方法加工 Cannot Cook!", "error");
+                    return;
+                }
+
+                setMoney(prev => prev - method.cost);
+                const newFood = {
+                    ...food,
+                    name: recipe.name,
+                    icon: recipe.icon,
+                    daysLeft: recipe.shelfLife,
+                    health: recipe.health,
+                    hunger: recipe.hunger,
+                    processed: true, // 加工後變為已處理，不能再變
+                    processMethodName: method.name,
+                    edible: true 
+                };
+
+                setInventory(prev => prev.map(item => item.id === food.id ? newFood : item));
+                addLog(`製作成 Made ${newFood.name}`, "success");
+            };
+
+            const feedRoommate = (personId, foodId) => {
+                const food = inventory.find(f => f.id === foodId);
+                const person = roommates.find(p => p.id === personId);
+                if (!food || !person) return;
+
+                // 檢查是否可食用
+                if (!food.edible) {
+                    addLog("這是生的，不能吃！請先烹飪 Raw! Cook first!", "error");
+                    return;
+                }
+
+                if (person.hunger >= 100) {
+                    addLog(`${person.name} 吃不下了 Full!`, "warning");
+                    return;
+                }
+
+                const isCraving = person.craving === food.name;
+                
+                let heartBonus = 0;
+                let hungerToAdd = food.hunger;
+
+                if (isCraving) {
+                    if (person.hearts < 3) {
+                        heartBonus = 1;
+                        addLog(`${person.name} 吃到想吃的！愛心+1 ❤️ Yummy!`, "success");
+                    } else {
+                        addLog(`${person.name} 吃到想吃的！心情超好！ Happy!`, "success");
+                    }
+                }
+
+                const newHunger = Math.min(100, person.hunger + hungerToAdd);
+                const newHealth = Math.min(100, Math.max(0, person.health + food.health));
+                const newHearts = Math.min(3, person.hearts + heartBonus);
+                
+                setRoommates(prev => prev.map(p => p.id === personId ? { 
+                    ...p, 
+                    hunger: newHunger, 
+                    health: newHealth, 
+                    hearts: newHearts,
+                    craving: null
+                } : p)); 
+                
+                setInventory(prev => prev.filter(f => f.id !== foodId));
+                setSelectedFoodId(null);
+
+                const healthChange = food.health >= 0 ? `+${food.health}` : `${food.health}`;
+                if (!isCraving) {
+                    addLog(`${person.name} 吃了 Ate ${food.name} (飽食+${food.hunger}, 健康${healthChange})`, food.health < 0 ? "warning" : "success");
+                }
+            };
+
+            const nextDay = () => {
+                if (day >= TOTAL_DAYS) {
+                    calculateFinalScore();
+                    return;
+                }
+
+                const nextDayVal = day + 1;
+                setDay(nextDayVal);
+                setMoney(prev => prev + DAILY_ALLOWANCE);
+                addLog(`--- 第 ${nextDayVal} 天 Day ${nextDayVal} (+$${DAILY_ALLOWANCE}) ---`, "system");
+
+                // 鄰居送禮 (偶數天)
+                if (nextDayVal % 2 === 0) {
+                    const giftKeys = Object.keys(FOOD_TYPES);
+                    const gift1 = FOOD_TYPES[giftKeys[Math.floor(Math.random() * giftKeys.length)]];
+                    const gift2 = FOOD_TYPES[giftKeys[Math.floor(Math.random() * giftKeys.length)]];
+                    setInventory(prev => [...prev, createFood(gift1), createFood(gift2)]);
+                    addLog("鄰居送來了食材！ Neighbor's Gift!", "success");
+                }
+
+                setInventory(prev => {
+                    const nextInv = [];
+                    prev.forEach(item => {
+                        if (item.daysLeft > 1) {
+                            nextInv.push({ ...item, daysLeft: item.daysLeft - 1 });
+                        } else {
+                            addLog(`${item.name} 腐壞丟棄！ Spoiled!`, "error");
+                        }
+                    });
+                    return nextInv;
+                });
+                
+                setRoommates(prev => prev.map(p => {
+                    let newHunger = p.hunger - 30;
+                    let newHealth = p.health;
+
+                    if (newHunger < 0) {
+                        newHealth -= 20; 
+                        addLog(`${p.name} 餓壞了！ Starving!`, "error");
+                        newHunger = 0;
+                    } else if (newHunger < 30) {
+                        addLog(`${p.name} 肚子餓了 Hungry!`, "warning");
+                    }
+
+                    if (newHunger > 60 && newHealth < 100 && newHealth > 0) newHealth = Math.min(100, newHealth + 2);
+
+                    return { ...p, hunger: newHunger, health: newHealth };
+                }));
+            };
+
+            const calculateFinalScore = () => {
+                const totalHealth = roommates.reduce((acc, curr) => acc + curr.health, 0);
+                const totalHunger = roommates.reduce((acc, curr) => acc + curr.hunger, 0);
+                const totalHearts = roommates.reduce((acc, curr) => acc + curr.hearts * 50, 0);
+                const finalScore = Math.floor(totalHealth + totalHunger + totalHearts);
+                setScore(finalScore);
+                setPhase('end');
+            };
+
+            const getProcessOptions = (food) => {
+                // 如果已經加工/烹飪過，就不能再變了
+                if (food.processed) return [];
+                
+                const possibleMethods = RECIPES[food.type];
+                if (!possibleMethods) return [];
+                return Object.entries(possibleMethods).map(([methodId, result]) => {
+                    return { ...METHODS[methodId], result };
+                });
+            };
+
+            const selectedFood = inventory.find(f => f.id === selectedFoodId);
+
+            if (phase === 'tutorial') return <TutorialWizard onStart={startGame} />;
+            if (phase === 'end') return <EndScreen score={score} roommates={roommates} onRestart={() => setPhase('tutorial')} />;
+
+            return (
+                <div className="flex flex-col h-full max-w-7xl mx-auto shadow-2xl bg-white text-slate-800">
+                    {/* Header */}
+                    <header className="bg-slate-800 text-white shadow-md z-20 shrink-0 safe-pt">
+                        {/* Desktop View */}
+                        <div className="hidden md:flex p-4 justify-between items-center h-16">
+                            <h1 className="font-bold text-lg flex items-center gap-2">
+                                <ChefHat className="text-orange-400 w-6 h-6"/> 
+                                <span>生存食堂 Weekly Kitchen</span>
+                            </h1>
+                            <div className="flex items-center gap-4 bg-slate-700 px-4 py-2 rounded-full text-sm">
+                                <div className="flex items-center gap-2">
+                                    <Clock size={16} className="text-blue-300"/> 
+                                    <span>Day {day}/{TOTAL_DAYS}</span>
+                                </div>
+                                <div className="w-px h-4 bg-slate-500"></div>
+                                <div className="flex items-center gap-2">
+                                    <Coins size={16} className="text-yellow-400"/> 
+                                    <span className={money < 50 ? "text-red-300 font-bold" : "text-yellow-100"}>${money}</span>
+                                </div>
+                            </div>
+                            <button onClick={nextDay} className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 transition active:scale-95 shadow-lg">
+                                結束今天 Next Day <ArrowRight size={16}/>
+                            </button>
+                        </div>
+
+                        {/* Mobile View */}
+                        <div className="md:hidden flex flex-col w-full bg-slate-800 border-b border-slate-700">
+                            <div className="flex justify-between items-center px-4 py-3">
+                                <h1 className="font-bold text-lg text-white flex items-center gap-2">
+                                    <ChefHat className="text-orange-400 w-6 h-6"/>
+                                    <span>生存食堂</span>
+                                </h1>
+                                <button onClick={nextDay} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-md flex items-center gap-1 text-xs border border-indigo-400 active:scale-95 active:bg-indigo-700">
+                                    結束 Next Day <ArrowRight size={14}/>
+                                </button>
+                            </div>
+                            <div className="bg-slate-900/60 px-4 py-2 flex justify-between items-center text-sm text-gray-200">
+                                <div className="flex items-center gap-2">
+                                    <Clock size={16} className="text-blue-400"/> 
+                                    <span className="font-mono tracking-wide">Day {day}/{TOTAL_DAYS}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Coins size={16} className="text-yellow-400"/> 
+                                    <span className={`font-mono font-bold text-lg ${money < 50 ? "text-red-400" : "text-yellow-400"}`}>${money}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <div className="flex flex-1 overflow-hidden relative">
+                        
+                        {/* Column 1: Roommates */}
+                        <div className={`
+                            ${mobileTab === 'roommates' ? 'flex' : 'hidden'} 
+                            lg:flex flex-col w-full lg:w-1/4 bg-slate-50 border-r border-gray-200 min-w-[250px]
+                        `}>
+                            <div className="p-3 bg-white border-b font-bold text-gray-600 flex items-center gap-2 shrink-0">
+                                <Users size={18}/> 室友 Roommates
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-2 space-y-2 pb-28 lg:pb-2">
+                                {roommates.map(r => (
+                                    <div key={r.id} className="bg-white p-2 rounded-lg border border-gray-200 shadow-sm relative group">
+                                        <div className="flex items-center gap-3">
+                                            {/* 頭像與愛心 */}
+                                            <div className="flex flex-col items-center gap-1 min-w-[3rem]">
+                                                <div className="text-3xl relative">
+                                                    {r.avatar}
+                                                </div>
+                                                <div className="flex gap-0.5">
+                                                    {[...Array(3)].map((_, i) => (
+                                                        <Heart key={i} size={10} className={i < r.hearts ? "fill-red-500 text-red-500" : "text-gray-300"} />
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* 資訊欄 */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                    <span className="font-bold text-gray-700 text-sm">{r.name}</span>
+                                                    {r.craving && (
+                                                        <div className="text-[10px] text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 flex items-center gap-1 overflow-hidden">
+                                                            想吃 Want: <span className="font-bold truncate max-w-[80px]">{r.craving}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                <div className="flex justify-between items-center text-xs mb-0.5">
+                                                     <span className="text-gray-400 text-[10px]">HP</span>
+                                                     <span className={`${r.health < 40 ? "text-red-500 font-bold" : "text-green-600"}`}>{Math.round(r.health)}</span>
+                                                </div>
+                                                <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-green-500" style={{width: `${r.health}%`}}></div>
+                                                </div>
+                                                
+                                                <div className="flex justify-between items-center text-xs mt-1 mb-0.5">
+                                                     <span className="text-gray-400 text-[10px]">Hunger</span>
+                                                </div>
+                                                <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-orange-400" style={{width: `${r.hunger}%`}}></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Column 2: Inventory */}
+                        <div className={`
+                            ${mobileTab === 'inventory' ? 'flex' : 'hidden'} 
+                            lg:flex flex-col flex-1 bg-slate-100 relative w-full
+                        `}>
+                            <div className="p-2 md:p-3 bg-white border-b shadow-sm z-10 shrink-0">
+                                <h2 className="font-bold text-gray-700 flex items-center gap-2 mb-2 text-sm md:text-base">
+                                    <ShoppingBasket className="text-blue-500 w-4 h-4 md:w-5 md:h-5"/> 採買 Shop (餘額 ${money})
+                                </h2>
+                                <div className="grid grid-cols-4 md:grid-cols-5 gap-1.5 md:gap-2">
+                                    {Object.entries(FOOD_TYPES).map(([key, type]) => (
+                                        <button 
+                                            key={key}
+                                            onClick={() => buyFood(key)}
+                                            disabled={money < type.cost}
+                                            className={`p-1 md:p-1.5 rounded border flex flex-col items-center justify-center transition active:scale-95
+                                                ${type.processed ? 'bg-orange-50 border-orange-200 text-orange-800' : 'bg-green-50 border-green-200 text-green-800'}
+                                                disabled:opacity-40 disabled:cursor-not-allowed`}
+                                        >
+                                            <span className="text-base md:text-lg">{type.icon}</span>
+                                            <span className="text-[10px] md:text-xs text-center leading-tight">{type.name.split(' ')[0]}</span>
+                                            <span className="font-bold text-[10px] md:text-xs">${type.cost}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-3 pb-28 lg:pb-4">
+                                <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase flex justify-between">
+                                    <span>冰箱 Fridge ({inventory.length})</span>
+                                    <span className="lg:hidden text-orange-500 animate-pulse">點擊烹飪 Select to Cook</span>
+                                </h3>
+                                {inventory.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center h-40 text-gray-400 text-sm">
+                                        <ShoppingBasket size={32} className="mb-2 opacity-20"/>
+                                        空空如也 Empty
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-3 content-start">
+                                        {inventory.map(food => (
+                                            <button 
+                                                key={food.id}
+                                                onClick={() => setSelectedFoodId(food.id)}
+                                                className={`p-2 md:p-3 rounded-xl border-2 transition text-left relative group active:scale-95
+                                                    ${selectedFoodId === food.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-white bg-white hover:border-blue-200 shadow-sm'}
+                                                    ${food.daysLeft <= 1 ? 'bg-red-50' : ''}
+                                                `}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div className="text-2xl md:text-3xl">{food.icon}</div>
+                                                    <div className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${food.daysLeft <= 1 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                                                        {food.daysLeft}d
+                                                    </div>
+                                                </div>
+                                                <div className="font-bold text-gray-800 text-xs md:text-sm mt-1 truncate">{food.name}</div>
+                                                {/* Raw tag */}
+                                                {!food.edible && (
+                                                    <div className="absolute bottom-2 right-2 text-[10px] bg-red-100 text-red-600 px-1 rounded font-bold border border-red-200">
+                                                        生 Raw
+                                                    </div>
+                                                )}
+                                                {selectedFoodId === food.id && (
+                                                    <div className="lg:hidden absolute inset-0 bg-blue-500/10 rounded-xl flex items-center justify-center">
+                                                        <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full shadow-lg">前往料理台 Go Kitchen</span>
+                                                    </div>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Column 3: Kitchen */}
+                        <div className={`
+                            ${mobileTab === 'kitchen' ? 'flex' : 'hidden'} 
+                            lg:flex flex-col w-full lg:w-1/4 bg-white border-l border-gray-200 min-w-[280px]
+                        `}>
+                            <div className="p-3 bg-slate-50 border-b font-bold text-gray-700 flex items-center gap-2 shrink-0">
+                                <ChefHat size={18}/> 料理台 Kitchen
+                            </div>
+                            
+                            <div className="flex-1 p-4 overflow-y-auto pb-28 lg:pb-4">
+                                {!selectedFood ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-gray-400 text-center text-sm p-4">
+                                        <ShoppingBasket size={48} className="mb-4 opacity-20"/>
+                                        <p>請從冰箱選食材</p>
+                                        <p className="text-xs">Select Food in Fridge</p>
+                                        <button 
+                                            onClick={() => setMobileTab('inventory')}
+                                            className="mt-4 lg:hidden px-4 py-2 bg-blue-100 text-blue-600 rounded-full text-xs font-bold"
+                                        >
+                                            回冰箱 Go Back
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6 animate-in fade-in">
+                                        <button 
+                                            onClick={() => setSelectedFoodId(null)}
+                                            className="lg:hidden w-full mb-2 flex items-center justify-center gap-2 text-white text-sm py-3 bg-red-500 hover:bg-red-600 rounded-lg shadow font-bold active:scale-95"
+                                        >
+                                            <X size={18}/> 取消 Cancel
+                                        </button>
+
+                                        {/* Food Info */}
+                                        <div className="text-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                            <div className="text-5xl mb-2">{selectedFood.icon}</div>
+                                            <h3 className="text-xl font-bold text-gray-800">{selectedFood.name}</h3>
+                                            <div className="flex justify-center gap-2 mt-1 text-xs">
+                                                {!selectedFood.edible && <span className="bg-red-100 text-red-600 px-2 py-1 rounded font-bold">生食 Raw (不可食)</span>}
+                                                {selectedFood.edible && <span className="bg-green-100 text-green-600 px-2 py-1 rounded font-bold">熟食 Cooked (可食)</span>}
+                                            </div>
+                                        </div>
+
+                                        {/* Feeding Options */}
+                                        <div>
+                                            <h4 className="font-bold text-gray-500 text-xs uppercase mb-2 flex items-center gap-1">
+                                                <Utensils size={12}/> 餵食 Feed
+                                            </h4>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {roommates.map(r => {
+                                                    const isCraving = r.craving === selectedFood.name;
+                                                    return (
+                                                        <button 
+                                                            key={r.id}
+                                                            onClick={() => feedRoommate(r.id, selectedFood.id)}
+                                                            className={`flex items-center gap-2 p-2 rounded border transition relative active:scale-95 text-left
+                                                                ${isCraving ? 'border-yellow-400 bg-yellow-50 hover:bg-yellow-100 ring-1 ring-yellow-300' : 'border-gray-100 hover:bg-blue-50 hover:border-blue-300'}`}
+                                                        >
+                                                            <div className="flex flex-col items-center gap-1 min-w-[2.5rem]">
+                                                                <div className="text-xl">{r.avatar}</div>
+                                                                <div className="flex gap-0.5">
+                                                                    {[...Array(3)].map((_, i) => (
+                                                                        <Heart key={i} size={8} className={i < r.hearts ? "fill-red-500 text-red-500" : "text-gray-300"} />
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="text-xs font-bold truncate">{r.name.split(' ')[0]}</div>
+                                                                <div className="text-[10px] text-gray-500">
+                                                                    HP {Math.round(r.health)}
+                                                                </div>
+                                                            </div>
+                                                            {isCraving && <div className="text-[10px] bg-red-500 text-white px-1 rounded absolute -top-1 -right-1 shadow animate-bounce">Want!</div>}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Processing Options */}
+                                        <div>
+                                            <h4 className="font-bold text-gray-500 text-xs uppercase mb-2 flex items-center gap-1">
+                                                <Flame size={12}/> 烹飪加工 Cook & Process
+                                            </h4>
+                                            <div className="space-y-2">
+                                                {getProcessOptions(selectedFood).map(option => (
+                                                    <button
+                                                        key={option.id}
+                                                        onClick={() => processFood(selectedFood, option.id)}
+                                                        className="w-full text-left p-2 rounded border border-orange-200 bg-orange-50 hover:bg-orange-100 transition group active:scale-95"
+                                                    >
+                                                        <div className="flex justify-between items-center mb-1">
+                                                            <span className="font-bold text-orange-800 text-sm flex items-center gap-1">
+                                                                {option.name} <span className="text-xs font-normal opacity-70">(-${option.cost})</span>
+                                                            </span>
+                                                            <span className="text-lg">{option.result.icon}</span>
+                                                        </div>
+                                                        <div className="text-[10px] text-gray-600 leading-tight">
+                                                            {option.desc}
+                                                            <div className="mt-1 text-orange-600 font-bold">
+                                                                變成 Make: {option.result.name}
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                                {getProcessOptions(selectedFood).length === 0 && (
+                                                    <div className="text-xs text-gray-400 italic text-center py-2 bg-gray-50 rounded">
+                                                        {selectedFood.processed ? "已經煮熟/加工過了 Already Cooked" : "無法再加工 Cannot Cook"}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Mobile Bottom Navigation Bar */}
+                        <div className="lg:hidden absolute bottom-0 left-0 w-full bg-white border-t flex justify-around items-center p-2 safe-pb pb-4 shadow-[0_-2px_10px_rgba(0,0,0,0.1)] z-30">
+                            <button 
+                                onClick={() => setMobileTab('roommates')}
+                                className={`flex flex-col items-center p-2 rounded-lg transition w-1/3 ${mobileTab === 'roommates' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`}
+                            >
+                                <Users size={24} />
+                                <span className="text-[10px] font-bold mt-1">室友 Roommates</span>
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setMobileTab('inventory');
+                                    setSelectedFoodId(null);
+                                }}
+                                className={`flex flex-col items-center p-2 rounded-lg transition w-1/3 ${mobileTab === 'inventory' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`}
+                            >
+                                <LayoutGrid size={24} />
+                                <span className="text-[10px] font-bold mt-1">冰箱 Fridge</span>
+                            </button>
+                            <button 
+                                onClick={() => setMobileTab('kitchen')}
+                                className={`flex flex-col items-center p-2 rounded-lg transition w-1/3 ${mobileTab === 'kitchen' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'} relative`}
+                            >
+                                <ChefHat size={24} />
+                                <span className="text-[10px] font-bold mt-1">料理台 Kitchen</span>
+                                {selectedFoodId && (
+                                    <span className="absolute top-1 right-8 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Universal Logs Overlay */}
+                    <div className="fixed top-32 left-1/2 -translate-x-1/2 w-max max-w-[90%] pointer-events-none z-50 flex flex-col items-center gap-1">
+                        {logs.slice(-3).reverse().map(log => (
+                            <div key={log.id} className={`text-sm px-4 py-2 rounded-full shadow-lg backdrop-blur-md font-bold animate-in fade-in slide-in-from-top-2 border border-white/20
+                                ${log.type === 'error' ? 'bg-red-500/90 text-white' : log.type === 'success' ? 'bg-green-500/90 text-white' : 'bg-slate-800/90 text-white'}
+                            `}>
+                                {log.msg}
+                            </div>
+                        ))}
+                    </div>
+
+                </div>
+            );
+        }
+
+        // --- 國小版教學 ---
+        const TutorialWizard = ({ onStart }) => {
+            const [step, setStep] = useState(0);
+            const steps = [
+                {
+                    title: "小廚師你好！ Hello Little Chef!",
+                    icon: <ChefHat size={80} className="text-orange-500"/>,
+                    content: (
+                        <div className="space-y-4 text-center">
+                            <p className="text-2xl font-bold">歡迎來到<br/>一週食堂 Weekly Kitchen！</p>
+                            <p className="text-xl">你的任務是照顧 6 位室友<br/>讓他們吃飽飽、身體健康！</p>
+                            <div className="p-4 bg-orange-100 rounded-xl border-2 border-orange-300 mt-4">
+                                <p className="font-bold text-orange-800 text-xl">遊戲時間：7 天 (7 Days)</p>
+                            </div>
+                        </div>
+                    )
+                },
+                {
+                    title: "重要規則！ Important Rule!",
+                    icon: <Flame size={80} className="text-red-500"/>,
+                    content: (
+                        <div className="space-y-6 text-center">
+                            <p className="text-3xl font-black text-red-600">生食不能吃！<br/>NO Raw Food!</p>
+                            <p className="text-xl">除了 <span className="bg-green-100 text-green-800 px-2 rounded font-bold">水果 Fruit</span> 以外，其他的食物（肉、魚、水餃、泡麵）都是生的。</p>
+                            <p className="text-xl">一定要去廚房用 <strong>烹飪 Cook</strong> 把食物煮熟，變成 <strong>熟食 Cooked</strong> 才能給室友吃喔！</p>
+                        </div>
+                    )
+                },
+                {
+                    title: "鄰居的禮物！ Surprise!",
+                    icon: <Gift size={80} className="text-purple-500"/>,
+                    content: (
+                        <div className="space-y-6 text-center">
+                            <p className="text-xl">在第 2, 4, 6 天（偶數天），熱心的鄰居會送食材來。</p>
+                            <p className="text-xl">記得檢查 <strong>冰箱 Fridge</strong> 喔！</p>
+                        </div>
+                    )
+                },
+                {
+                    title: "讓室友開心！ Make Them Happy!",
+                    icon: <Heart size={80} className="text-pink-500 fill-pink-500"/>,
+                    content: (
+                        <div className="space-y-6 text-center">
+                            <p className="text-xl">每位室友都有 <strong>想吃 Want</strong> 的東西。</p>
+                            <p className="text-xl">如果你餵他們想吃的食物，就會得到 <strong>愛心 Heart</strong> ❤️！</p>
+                            <p className="text-lg text-gray-500">請讓室友吃飽、健康、開心喔！</p>
+                        </div>
+                    )
+                }
+            ];
+
+            return (
+                <div className="h-full flex items-center justify-center bg-yellow-400/90 p-4 z-50 absolute inset-0 safe-pt safe-pb">
+                    <div className="bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.2)] w-full max-w-lg overflow-hidden flex flex-col min-h-[500px] border-4 border-yellow-200">
+                        <div className="flex-1 p-8 flex flex-col items-center justify-center">
+                            <div className="mb-6 animate-bounce">{steps[step].icon}</div>
+                            <h2 className="text-3xl font-black text-gray-800 mb-6 text-center leading-tight">{steps[step].title}</h2>
+                            <div className="text-gray-600 w-full text-lg leading-relaxed">
+                                {steps[step].content}
+                            </div>
+                        </div>
+                        
+                        <div className="p-6 bg-yellow-50 border-t-2 border-yellow-100 flex justify-between items-center">
+                            <div className="flex gap-2">
+                                {steps.map((_, i) => (
+                                    <div key={i} className={`w-3 h-3 rounded-full ${i === step ? 'bg-orange-500 scale-125' : 'bg-gray-300'}`}></div>
+                                ))}
+                            </div>
+                            <div className="flex gap-3">
+                                {step > 0 && (
+                                    <button onClick={() => setStep(s => s - 1)} className="px-5 py-3 text-gray-600 font-bold hover:bg-gray-200 rounded-xl bg-white border border-gray-200 text-lg">
+                                        上一步 Back
+                                    </button>
+                                )}
+                                {step < steps.length - 1 ? (
+                                    <button onClick={() => setStep(s => s + 1)} className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 flex items-center gap-2 text-lg shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                                        下一步 Next <ChevronRight size={20}/>
+                                    </button>
+                                ) : (
+                                    <button onClick={onStart} className="px-8 py-3 bg-green-500 text-white font-bold rounded-xl hover:bg-green-600 flex items-center gap-2 text-xl shadow-lg hover:shadow-xl transition transform hover:scale-105 animate-pulse">
+                                        開始！ Start <Play size={24}/>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const EndScreen = ({ score, roommates, onRestart }) => (
+            <div className="h-full flex flex-col items-center justify-center bg-slate-800 p-4 text-white z-50 absolute inset-0 overflow-y-auto safe-pt safe-pb">
+                <div className="max-w-md w-full text-center space-y-6">
+                    <h2 className="text-4xl font-bold text-yellow-300">挑戰結束！ Game Over!</h2>
+                    <div className="bg-slate-700/50 p-6 rounded-2xl border border-slate-600">
+                        <div className="text-7xl font-black text-white mb-2">{score}</div>
+                        <p className="text-blue-300 text-lg">總分 Total Score</p>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {roommates.map(r => (
+                            <div key={r.id} className="bg-slate-700 p-3 rounded-xl flex flex-col items-center relative overflow-hidden border border-slate-600">
+                                <div className="text-3xl z-10 mb-1">{r.avatar}</div>
+                                <div className="font-bold text-sm z-10">{r.name.split(' ')[0]}</div>
+                                <div className="flex gap-1 mt-1 z-10">
+                                    {[...Array(3)].map((_, i) => (
+                                        <Heart key={i} size={12} className={i < r.hearts ? "fill-red-500 text-red-500" : "text-gray-600"} />
+                                    ))}
+                                </div>
+                                <div className={`text-xs mt-1 z-10 font-bold ${r.health > 70 ? 'text-green-400' : 'text-red-400'}`}>
+                                    HP: {Math.round(r.health)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={onRestart} className="w-full px-8 py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-bold text-xl flex items-center justify-center gap-2 mx-auto transition shadow-lg hover:shadow-blue-500/50">
+                        <RotateCcw /> 再玩一次 Play Again
+                    </button>
+                </div>
+            </div>
+        );
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
