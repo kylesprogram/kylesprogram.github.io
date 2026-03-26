@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>醫療英雄雙語挑戰 - Medical Hero</title>
+    
+    <!-- 引入 Tailwind CSS (樣式) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 React 與 ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- 引入 Babel (讓瀏覽器能看得懂 JSX 語法) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 FontAwesome 圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased overflow-hidden overscroll-none h-screen w-screen m-0 p-0">
+
+    <!-- React 應用程式會掛載到這個 div 裡面 -->
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- 替換原先的 lucide-react 圖示，改用 FontAwesome 元件 ---
+        const HeartPulse = ({size, className}) => <i className={`fa-solid fa-heart-pulse ${className||''}`} style={{fontSize: size}}></i>;
+        const ShieldAlert = ({size, className}) => <i className={`fa-solid fa-triangle-exclamation ${className||''}`} style={{fontSize: size}}></i>;
+        const PhoneCall = ({size, className}) => <i className={`fa-solid fa-phone-volume ${className||''}`} style={{fontSize: size}}></i>;
+        const Mic = ({size, className}) => <i className={`fa-solid fa-microphone ${className||''}`} style={{fontSize: size}}></i>;
+        const Grid = ({size, className}) => <i className={`fa-solid fa-grip ${className||''}`} style={{fontSize: size}}></i>;
+        const Volume2 = ({size, className}) => <i className={`fa-solid fa-volume-high ${className||''}`} style={{fontSize: size}}></i>;
+        const User = ({size, className}) => <i className={`fa-solid fa-user ${className||''}`} style={{fontSize: size}}></i>;
+        const MapPin = ({size, className}) => <i className={`fa-solid fa-location-dot ${className||''}`} style={{fontSize: size}}></i>;
+        const Info = ({size, className}) => <i className={`fa-solid fa-circle-info ${className||''}`} style={{fontSize: size}}></i>;
+        const XCircle = ({size, className}) => <i className={`fa-regular fa-circle-xmark ${className||''}`} style={{fontSize: size}}></i>;
+        const ArrowRight = ({size, className}) => <i className={`fa-solid fa-arrow-right ${className||''}`} style={{fontSize: size}}></i>;
+        const Stethoscope = ({size, className}) => <i className={`fa-solid fa-stethoscope ${className||''}`} style={{fontSize: size}}></i>;
+        const Building2 = ({size, className}) => <i className={`fa-regular fa-hospital ${className||''}`} style={{fontSize: size}}></i>;
+        const CheckCircle2 = ({size, className}) => <i className={`fa-regular fa-circle-check ${className||''}`} style={{fontSize: size}}></i>;
+
+        // --- 遊戲資料設定 ---
+
+        // 第一關：119通報二選一流程 (Bilingual)
+        const LEVEL1_STEPS = [
+          {
+            question: "Step 1: Location / 第一步：確認地點",
+            options: [
+              { id: '1a', text: "Address: 100 Zhongshan Rd. / 清楚說明：中山路100號", isCorrect: true },
+              { id: '1b', text: "Somewhere with trees. / 含糊其辭：我在一條有很多樹的路", isCorrect: false }
+            ]
+          },
+          {
+            question: "Step 2: Incident / 第二步：說明事件",
+            options: [
+              { id: '2a', text: "Car accident, people injured. / 告知狀況：車禍有人受傷", isCorrect: true },
+              { id: '2b', text: "The traffic is terrible! / 抱怨交通：這邊塞車很嚴重", isCorrect: false }
+            ]
+          },
+          {
+            question: "Step 3: Condition / 第三步：傷患狀況",
+            options: [
+              { id: '3a', text: "Do they have insurance? / 詢問保險：先問他有沒有買保險", isCorrect: false },
+              { id: '3b', text: "Unconscious, breathing fast. / 評估意識：傷患昏迷且呼吸急促", isCorrect: true }
+            ]
+          },
+          {
+            question: "Step 4: Contact / 第四步：留存聯絡",
+            options: [
+              { id: '4a', text: "I'm Mr. Lin, my number is... / 報案資訊：我是林先生，電話是...", isCorrect: true },
+              { id: '4b', text: "I'm hanging up now! / 直接掛斷：我要掛電話了喔", isCorrect: false }
+            ]
+          }
+        ];
+
+        // 第二關：病症資料 (二分法：1=診所, 2=大醫院)
+        const SYMPTOMS_DATA = [
+          // 診所 (Local Clinic)
+          { text: "Common Cold / 感冒", desc: "Mild fever and runny nose. / 輕微發燒與流鼻水。", level: 1 },
+          { text: "Minor Cut / 輕微割傷", desc: "Small cut on finger, stable. / 手指小傷口，情況穩定。", level: 1 },
+          { text: "Stomachache / 腸胃炎", desc: "Mild diarrhea after dinner. / 晚餐後輕微腹瀉。", level: 1 },
+          { text: "Skin Rash / 皮膚紅疹", desc: "Itchy skin, no swelling. / 皮膚癢，無紅腫發炎。", level: 1 },
+          { text: "Toothache / 牙痛", desc: "Cavity needs inspection. / 蛀牙需要檢查。", level: 1 },
+          { text: "Prescription Refill / 慢性病拿藥", desc: "Blood pressure is stable. / 血壓穩定，需領取長期藥物。", level: 1 },
+          { text: "Red Eyes / 結膜炎", desc: "Eyes are red and itchy. / 眼睛發紅且發癢。", level: 1 },
+          { text: "Insomnia / 睡眠障礙", desc: "Difficulty falling asleep. / 難以入睡，需要諮詢。", level: 1 },
+          { text: "Minor Sprain / 輕微扭傷", desc: "Twisted ankle while walking. / 走路不小心扭到腳。", level: 1 },
+          { text: "Sore Throat / 喉嚨痛", desc: "Pain when swallowing, mild. / 吞嚥時微痛，症狀輕微。", level: 1 },
+
+          // 大醫院 (Large Hospital)
+          { text: "Broken Bone / 骨折", desc: "Arm is deformed after a fall. / 摔倒後手臂明顯變形。", level: 2 },
+          { text: "Appendicitis / 盲腸炎", desc: "Severe lower right belly pain. / 右下腹部劇烈疼痛。", level: 2 },
+          { text: "Pneumonia / 肺炎", desc: "High fever and coughing blood. / 持續高燒且咳血。", level: 2 },
+          { text: "Asthma Attack / 氣喘發作", desc: "Difficulty breathing, gasping. / 呼吸極度困難，喘不過氣。", level: 2 },
+          { text: "Stroke Signs / 中風徵兆", desc: "Face drooping, weak arm. / 臉部歪斜、單側肢體無力。", level: 2 },
+          { text: "Heart Attack / 心肌梗塞", desc: "Chest pain and cold sweat. / 胸痛、冒冷汗、呼吸困難。", level: 2 },
+          { text: "Major Trauma / 重大創傷", desc: "Large wound, heavy bleeding. / 大面積傷口且大量出血。", level: 2 },
+          { text: "Severe Burn / 嚴重燒燙傷", desc: "Large area of skin damaged. / 大面積皮膚受損。", level: 2 },
+          { text: "Snake Bite / 毒蛇咬傷", desc: "Bitten by a venomous snake. / 被不明毒蛇咬傷。", level: 2 },
+          { text: "Choking / 異物梗塞", desc: "Cannot breathe or speak. / 無法呼吸或說話，臉色發紫。", level: 2 }
+        ];
+
+        function HospitalGame() {
+          const [gameState, setGameState] = useState('start'); 
+          const [feedback, setFeedback] = useState(null);
+
+          // 第一關狀態
+          const [currentStepIdx, setCurrentStepIdx] = useState(0);
+          const [timeLeft, setTimeLeft] = useState(15);
+
+          // 第二關狀態
+          const [availableSymptoms, setAvailableSymptoms] = useState([...SYMPTOMS_DATA]);
+          const [currentSymptom, setCurrentSymptom] = useState(null);
+          const [consecutiveWins, setConsecutiveWins] = useState(0);
+
+          // --- 輔助邏輯 ---
+          const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
+
+          const getNewSymptom = (currentList) => {
+            let list = currentList.length === 0 ? [...SYMPTOMS_DATA] : currentList;
+            const shuffled = shuffleArray(list);
+            const selected = shuffled.pop();
+            setAvailableSymptoms(shuffled);
+            return selected;
+          };
+
+          // --- 遊戲邏輯 ---
+          useEffect(() => {
+            let timer;
+            if (gameState === 'level1' && !feedback && timeLeft > 0) {
+              timer = setTimeout(() => setTimeLeft(t => t - 1), 1000);
+            } else if (gameState === 'level1' && !feedback && timeLeft === 0) {
+              setFeedback({ type: 'error', text: 'Timeout! You were too slow. / 太慢了！通報超時。', action: resetLevel1 });
+            }
+            return () => clearTimeout(timer);
+          }, [timeLeft, gameState, feedback]);
+
+          const handleLevel1Choice = (option) => {
+            if (option.isCorrect) {
+              if (currentStepIdx < LEVEL1_STEPS.length - 1) {
+                setCurrentStepIdx(prev => prev + 1);
+                setTimeLeft(15);
+              } else {
+                setFeedback({ type: 'success', text: 'Success! Help is coming. / 報案完成！救護人員已出發。', action: startLevel2 });
+              }
+            } else {
+              setFeedback({ type: 'error', text: 'Wrong info! Operator is confused. / 資訊錯誤！接線員無法理解。', action: resetLevel1 });
+            }
+          };
+
+          const resetLevel1 = () => {
+            setCurrentStepIdx(0);
+            setTimeLeft(15);
+            setFeedback(null);
+          };
+
+          const startLevel2 = () => {
+            setGameState('level2');
+            setFeedback(null);
+            setConsecutiveWins(0);
+            setCurrentSymptom(getNewSymptom([...SYMPTOMS_DATA]));
+          };
+
+          const handleLevel2Choice = (level) => {
+            if (level === currentSymptom.level) {
+              const nextWins = consecutiveWins + 1;
+              setConsecutiveWins(nextWins);
+              if (nextWins >= 10) {
+                setGameState('win');
+              } else {
+                setFeedback({ 
+                  type: 'success', 
+                  text: 'Correct Choice! / 判斷正確！', 
+                  action: () => {
+                    setFeedback(null);
+                    setCurrentSymptom(getNewSymptom(availableSymptoms));
+                  } 
+                });
+              }
+            } else if (level > currentSymptom.level) {
+              setConsecutiveWins(0);
+              setFeedback({ 
+                type: 'error', 
+                title: 'Hospital Doctor / 大醫院醫師 💢',
+                text: `Stop! This is a minor issue. Please go to a clinic. / 住手！這只是輕微症狀，請去診所，不要佔用急診資源！`, 
+                action: () => {
+                  setFeedback(null);
+                  setCurrentSymptom(getNewSymptom(availableSymptoms));
+                }
+              });
+            } else {
+              setConsecutiveWins(0);
+              setFeedback({ 
+                type: 'error', 
+                title: 'Clinic Doctor / 診所醫師 💦',
+                text: `Emergency! We can't handle this. Go to the hospital! / 太危急了！我們無法處理，請立刻拿轉診單去大醫院！`, 
+                action: () => {
+                  setFeedback(null);
+                  setCurrentSymptom(getNewSymptom(availableSymptoms));
+                }
+              });
+            }
+          };
+
+          const restartAll = () => {
+            setGameState('start');
+            resetLevel1();
+            setConsecutiveWins(0);
+            setFeedback(null);
+          };
+
+          return (
+            <div className="w-full h-full flex flex-col bg-slate-50 overflow-hidden">
+                
+              {/* Top Header */}
+              <div className="h-16 shrink-0 bg-blue-700 flex items-center justify-between px-8 text-white shadow-md z-10">
+                <div className="flex items-center gap-3">
+                  <HeartPulse className="w-6 h-6 text-white" />
+                  <span className="font-bold tracking-wide">Medical Hero / 醫療英雄挑戰賽</span>
+                </div>
+                {gameState === 'level1' && (
+                    <div className={`font-mono text-xl px-4 py-1 rounded bg-black/20 ${timeLeft < 5 ? 'text-red-400 animate-pulse' : ''}`}>
+                      00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
+                    </div>
+                  )}
+                  {gameState === 'level2' && (
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm opacity-80 uppercase tracking-widest font-bold">Wins / 連勝</span>
+                      <div className="w-48 h-3 bg-blue-900 rounded-full overflow-hidden border border-blue-400">
+                        <div 
+                          className="h-full bg-yellow-400 transition-all duration-500" 
+                          style={{ width: `${(consecutiveWins / 10) * 100}%` }}
+                        ></div>
+                      </div>
+                      <span className="font-bold">{consecutiveWins}/10</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Main Body */}
+                <div className="flex-1 w-full max-w-6xl mx-auto p-4 md:p-8 relative overflow-hidden flex flex-col justify-center">
+                  
+                  {/* Start Screen */}
+                  {gameState === 'start' && (
+                    <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-8 animate-fade-in">
+                      <div className="p-6 bg-blue-100 rounded-full">
+                        <ShieldAlert className="w-16 h-16 text-blue-600" size="4rem" />
+                      </div>
+                      <div>
+                        <h1 className="text-4xl font-black text-slate-800 mb-2">Save the Healthcare System</h1>
+                        <h2 className="text-2xl font-bold text-blue-600 mb-6">醫療資源保衛戰</h2>
+                        <p className="text-lg text-slate-600 leading-relaxed">
+                          <b>Level 1: 119 Reporting / 報案挑戰</b><br/>
+                          Call 119 and provide correct information. / 正確報案通報。<br/>
+                          <b>Level 2: Triage / 就醫分級</b><br/>
+                          Choose between Clinic or Hospital. / 連續答對 10 題症狀分類。
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setGameState('level1')}
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-2xl font-bold py-5 px-12 rounded-2xl shadow-xl transition-transform hover:scale-105"
+                      >
+                        START GAME / 開始遊戲
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Level 1: Phone UI */}
+                  {gameState === 'level1' && !feedback && (
+                    <div className="w-full flex gap-10 items-center justify-center max-w-5xl mx-auto animate-fade-in">
+                      {/* Phone Mockup */}
+                      <div className="w-64 bg-slate-800 rounded-[2.5rem] p-3 border-[6px] border-slate-700 shadow-2xl shrink-0">
+                        <div className="bg-slate-900 rounded-[2rem] h-[380px] overflow-hidden flex flex-col pt-8">
+                          <div className="flex flex-col items-center gap-2 mb-6 text-center">
+                            <div className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center animate-pulse">
+                              <PhoneCall className="text-white" size="1.5rem" />
+                            </div>
+                            <span className="text-white font-bold text-lg">Calling 119 / 通話中</span>
+                            <span className="text-slate-400 text-xs">Dispatch Center / 勤務中心</span>
+                          </div>
+                          <div className="px-6 space-y-3">
+                            <div className="bg-slate-800 p-3 rounded-xl text-blue-400 text-xs italic">
+                              "119, what is your emergency? / 請說出您的地點與狀況..."
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 opacity-30">
+                              {[Mic, Grid, Volume2, User, MapPin, Info].map((IconComp, i) => (
+                                <div key={i} className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-white">
+                                  <IconComp size="0.875rem" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="mt-auto mb-6 flex justify-center">
+                            <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center shadow-lg">
+                              <XCircle className="text-white" size="1.5rem" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Questions */}
+                      <div className="flex-1 max-w-2xl space-y-8">
+                        <div className="bg-white p-6 rounded-2xl border-2 border-slate-200 shadow-sm">
+                          <h2 className="text-2xl font-black text-slate-800">{LEVEL1_STEPS[currentStepIdx].question}</h2>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                          {LEVEL1_STEPS[currentStepIdx].options.map((opt, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleLevel1Choice(opt)}
+                              className="bg-white hover:bg-blue-50 border-4 border-slate-200 hover:border-blue-500 p-5 rounded-2xl text-left text-xl font-bold transition-all flex items-center justify-between group shadow-sm"
+                            >
+                              <span className="text-slate-700 group-hover:text-blue-800">{opt.text}</span>
+                              <ArrowRight className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1" size="1.5rem" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Level 2: Symptom Sorting */}
+                  {gameState === 'level2' && !feedback && currentSymptom && (
+                    <div className="h-full flex flex-col items-center justify-center animate-fade-in space-y-8">
+                      <div className="text-center space-y-2">
+                        <h3 className="text-blue-500 font-bold uppercase tracking-widest text-sm">Patient Symptom / 病患描述</h3>
+                        <h2 className="text-5xl font-black text-slate-800">{currentSymptom.text}</h2>
+                        <p className="text-xl text-red-600 font-bold bg-red-50 px-6 py-2 rounded-full inline-block">
+                          {currentSymptom.desc}
+                        </p>
+                      </div>
+
+                      <div className="w-full flex justify-center gap-10">
+                        <button 
+                          onClick={() => handleLevel2Choice(1)}
+                          className="w-1/2 bg-white hover:bg-green-50 border-4 border-slate-200 hover:border-green-500 rounded-3xl p-10 flex flex-col items-center gap-4 transition-all hover:-translate-y-2 group shadow-md"
+                        >
+                          <div className="w-24 h-24 bg-green-100 text-green-600 rounded-3xl flex items-center justify-center group-hover:rotate-6 transition-transform">
+                            <Stethoscope size="3.5rem" />
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-black text-slate-800 mb-1">Local Clinic</div>
+                            <div className="text-xl font-bold text-green-700 mb-2">基層診所</div>
+                            <p className="text-sm text-slate-500 leading-tight">For mild issues and routine checks.<br/>處理輕微病症與慢性病。</p>
+                          </div>
+                        </button>
+
+                        <button 
+                          onClick={() => handleLevel2Choice(2)}
+                          className="w-1/2 bg-white hover:bg-red-50 border-4 border-slate-200 hover:border-red-500 rounded-3xl p-10 flex flex-col items-center gap-4 transition-all hover:-translate-y-2 group shadow-md"
+                        >
+                          <div className="w-24 h-24 bg-red-100 text-red-600 rounded-3xl flex items-center justify-center group-hover:-rotate-6 transition-transform">
+                            <Building2 size="3.5rem" />
+                          </div>
+                          <div className="text-center">
+                            <div className="text-3xl font-black text-slate-800 mb-1">Large Hospital</div>
+                            <div className="text-xl font-bold text-red-700 mb-2">大醫院</div>
+                            <p className="text-sm text-slate-500 leading-tight">For emergencies and severe injuries.<br/>處理急重症、骨折與手術。</p>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Feedback Overlay */}
+                  {feedback && (
+                    <div className="absolute inset-0 bg-slate-900/90 flex items-center justify-center p-8 z-50 animate-fade-in backdrop-blur-md">
+                      <div className={`w-full max-w-lg bg-white rounded-[2.5rem] p-10 text-center shadow-2xl border-b-[12px] ${feedback.type === 'success' ? 'border-green-500' : 'border-red-500'}`}>
+                        <div className="mb-6 flex justify-center">
+                          {feedback.type === 'success' ? <CheckCircle2 className="text-green-500" size="6rem" /> : <XCircle className="text-red-500" size="6rem" />}
+                        </div>
+                        {feedback.title && <h3 className="text-2xl font-bold mb-4 text-slate-800 underline underline-offset-4">{feedback.title}</h3>}
+                        <p className="text-2xl font-bold text-slate-700 mb-10 leading-relaxed">{feedback.text}</p>
+                        <button 
+                          onClick={feedback.action}
+                          className={`w-full py-5 rounded-2xl text-white font-black text-xl shadow-lg transition-transform active:scale-95 ${feedback.type === 'success' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                        >
+                          {feedback.type === 'success' ? 'CONTINUE / 繼續' : 'RETRY / 重新嘗試'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Win Screen */}
+                  {gameState === 'win' && (
+                    <div className="h-full flex flex-col items-center justify-center text-center space-y-8 animate-fade-in">
+                      <div className="relative">
+                        <div className="absolute inset-0 bg-yellow-400 blur-3xl opacity-30 animate-pulse"></div>
+                        <div className="relative bg-white p-12 rounded-full shadow-2xl border-8 border-yellow-100">
+                          <HeartPulse className="text-blue-600" size="8rem" />
+                        </div>
+                      </div>
+                      <div>
+                        <h2 className="text-5xl font-black text-slate-800 mb-4">Master of Triage!</h2>
+                        <h3 className="text-3xl font-bold text-blue-600">恭喜！您是就醫分級達人</h3>
+                      </div>
+                      <p className="text-xl text-slate-600 max-w-xl">
+                        You correctly identified all cases! You help keep our medical system running smoothly.
+                        <br/>您成功落實了分級醫療，幫助醫療資源留給最需要的人。
+                      </p>
+                      <button onClick={restartAll} className="bg-slate-800 hover:bg-slate-900 text-white text-2xl font-bold py-5 px-16 rounded-2xl shadow-xl transition-all hover:scale-105">
+                        PLAY AGAIN / 再玩一次
+                      </button>
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Bottom Bar */}
+                <div className="h-10 shrink-0 bg-slate-100 border-t flex items-center justify-center gap-6 text-[10px] text-slate-400 font-bold tracking-widest uppercase z-10">
+                  <span>Triage Simulator v3.0</span>
+                  <span>Standalone Web Version</span>
+                  <span>Care for resources, care for lives.</span>
+                </div>
+            </div>
+          );
+        }
+
+        // --- 將 React 元件渲染到畫面上 ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HospitalGame />);
+    </script>
+</body>
+</html>
